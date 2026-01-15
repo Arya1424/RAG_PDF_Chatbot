@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 from typing import List
+import json
 
 # API Configuration
 API_URL = "http://localhost:8000"
@@ -53,32 +54,45 @@ def upload_documents(subject_id: str, files) -> dict:
         st.error(f"Error uploading documents: {response.text}")
         return None
 
-def ask_question(subject_id: str, question: str) -> dict:
+def get_subject_details(subject_id: str) -> dict:
+    """Get detailed subject information including documents"""
     try:
-        response = requests.post(
-            f"{API_URL}/chat",
-            json={
-                "subject_id": subject_id,
-                "question": question,
-                "top_k": 3
-            },
-            timeout=60  # 🔴 CRITICAL
-        )
-
+        response = requests.get(f"{API_URL}/subjects/{subject_id}/details")
         if response.status_code == 200:
             return response.json()
-        else:
-            st.error("Backend error while answering")
-            return None
-
-    except requests.exceptions.Timeout:
-        st.error("⏳ The model is taking too long. Try a shorter question.")
+        return None
+    except:
         return None
 
-    except requests.exceptions.RequestException as e:
-        st.error("❌ Backend not reachable")
+def ask_question(subject_id: str, question: str) -> dict:
+    """Ask a question to the chatbot"""
+    response = requests.post(
+        f"{API_URL}/chat",
+        json={
+            "subject_id": subject_id,
+            "question": question,
+            "top_k": 3
+        }
+    )
+    if response.status_code == 200:
+        return response.json()
+    else:
+        st.error(f"Error getting answer: {response.text}")
         return None
-
+    """Ask a question to the chatbot"""
+    response = requests.post(
+        f"{API_URL}/chat",
+        json={
+            "subject_id": subject_id,
+            "question": question,
+            "top_k": 3
+        }
+    )
+    if response.status_code == 200:
+        return response.json()
+    else:
+        st.error(f"Error getting answer: {response.text}")
+        return None
 
 # Main UI
 st.title("📚 Document-Based Subject Chatbot")
@@ -160,11 +174,9 @@ if st.session_state.current_subject:
     elif selected_tab == "📤 Upload Documents":
         st.header(f"Upload Documents to {subject['name']}")
         
-        st.info("📁 Supported formats: PDF, TXT")
-        
         uploaded_files = st.file_uploader(
             "Choose files to upload",
-            type=["pdf", "txt"],
+            type=["pdf", "txt", "ppt", "pptx", "png", "jpg", "jpeg"],
             accept_multiple_files=True,
             key="file_uploader"
         )
@@ -185,19 +197,69 @@ if st.session_state.current_subject:
     elif selected_tab == "ℹ️ Subject Info":
         st.header(f"Subject Information: {subject['name']}")
         
-        col1, col2 = st.columns(2)
+        # Get detailed info
+        details = get_subject_details(subject["id"])
+        
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             st.metric("Subject ID", subject["id"][:8] + "...")
-            st.metric("Documents", subject["document_count"])
-        
         with col2:
+            st.metric("Documents", subject["document_count"])
+        with col3:
             st.metric("Created", subject["created_at"][:10])
         
         st.divider()
         
-        st.subheader("Subject Details")
-        st.json(subject)
+        # Show folder structure
+        if details and "folder_path" in details:
+            st.subheader("📁 Storage Location")
+            st.code(details["folder_path"], language="text")
+            
+            st.info(f"""
+            **Folder Structure:**
+            - 📄 Documents: `{details['folder_path']}/documents/`
+            - 🔍 Vector DB: `{details['folder_path']}/vector_db/`
+            - 📊 Metadata: `{details['folder_path']}/metadata/`
+            """)
+        
+        # Show documents on disk
+        if details and "documents_on_disk" in details:
+            st.subheader("📚 Uploaded Documents")
+            
+            if details["documents_on_disk"]:
+                for doc in details["documents_on_disk"]:
+                    with st.expander(f"📄 {doc['filename']}"):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.write(f"**Size:** {doc['size_mb']} MB")
+                        with col2:
+                            st.write(f"**Modified:** {doc['modified'][:19]}")
+            else:
+                st.info("No documents uploaded yet")
+        
+        st.divider()
+        
+        st.subheader("🔧 Subject Management")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("🔄 Refresh Info", use_container_width=True):
+                st.rerun()
+        
+        with col2:
+            if st.button("🗑️ Delete Subject", use_container_width=True, type="secondary"):
+                st.warning("⚠️ This will delete all documents and data for this subject!")
+                if st.button("⚠️ Confirm Delete", type="primary"):
+                    try:
+                        response = requests.delete(f"{API_URL}/subjects/{subject['id']}")
+                        if response.status_code == 200:
+                            st.success("Subject deleted successfully!")
+                            st.session_state.current_subject = None
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"Error deleting subject: {e}")
     
     # Chat input - ALWAYS at the bottom, outside all sections
     st.divider()

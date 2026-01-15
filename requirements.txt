@@ -7,6 +7,13 @@ pydantic==2.5.0
 # PDF Processing
 PyPDF2==3.0.1
 
+# PowerPoint Processing
+python-pptx==0.6.23
+
+# Image Processing & OCR
+Pillow==10.1.0
+pytesseract==0.3.10
+
 # Embeddings & Vector Search
 sentence-transformers==2.2.2
 faiss-cpu==1.7.4
